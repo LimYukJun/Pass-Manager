@@ -13,7 +13,8 @@ class FirestoreManager {
     func uploadBarcode(_ code: String) {
         let data: [String: Any] = [
             "barcode": code,
-            "timestamp": Timestamp(date: Date())
+            "timestamp": Timestamp(date: Date()),
+            "comment": ""
         ]
 
         db.collection("barcodes").addDocument(data: data) { error in
@@ -43,6 +44,25 @@ class FirestoreManager {
                         }
                     }
                 }
+            }
+    }
+
+    func fetchBarcodes(completion: @escaping ([String]) -> Void) {
+        db.collection("barcodes")
+            .order(by: "timestamp", descending: false)
+            .getDocuments { snapshot, error in
+                if let error = error {
+                    print("❌ Fetch error: \(error)")
+                    completion([])
+                    return
+                }
+
+                let barcodes = snapshot?.documents.compactMap {
+                    $0.data()["barcode"] as? String
+                } ?? []
+
+                print("📥 Fetched barcodes: \(barcodes.count)")
+                completion(barcodes)
             }
     }
 }
