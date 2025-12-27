@@ -9,6 +9,7 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var store = ScannedBarcodeStore()
+    @StateObject private var store2 = BoardingPassStore()
 
     var body: some View {
         TabView {
@@ -21,6 +22,11 @@ struct ContentView: View {
                 .environmentObject(store)
                 .tabItem {
                     Label("Scan", systemImage: "camera.viewfinder")
+                }
+            BoardingPassView()
+                .environmentObject(store2)
+                .tabItem {
+                    Label("Flight", systemImage: "airplane.departure")
                 }
         }
     }

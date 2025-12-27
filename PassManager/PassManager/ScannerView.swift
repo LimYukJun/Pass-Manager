@@ -9,65 +9,86 @@ import SwiftUI
 import AVFoundation
 
 struct ScannerView: UIViewControllerRepresentable {
-    var onScan: (String) -> Void
+    let onScan: (String) -> Void
 
-    func makeUIViewController(context: Context) -> ScannerViewController {
-        let controller = ScannerViewController()
-        controller.onScan = onScan
-        return controller
+    func makeUIViewController(context: Context) -> ScannerVC {
+        let vc = ScannerVC()
+        vc.onScan = onScan
+        return vc
     }
 
-    func updateUIViewController(_ uiViewController: ScannerViewController, context: Context) {}
+    func updateUIViewController(_ uiViewController: ScannerVC, context: Context) {}
 }
 
-class ScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
-    var captureSession: AVCaptureSession!
-    var previewLayer: AVCaptureVideoPreviewLayer!
+final class ScannerVC: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
+
     var onScan: ((String) -> Void)?
+
+    private let session = AVCaptureSession()
+    private let sessionQueue = DispatchQueue(label: "camera.session.queue")
 
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        captureSession = AVCaptureSession()
+        // Camera preview must be on main thread
+        let preview = AVCaptureVideoPreviewLayer(session: session)
+        preview.frame = view.bounds
+        preview.videoGravity = .resizeAspectFill
+        view.layer.addSublayer(preview)
 
-        guard let videoCaptureDevice = AVCaptureDevice.default(for: .video),
-              let videoInput = try? AVCaptureDeviceInput(device: videoCaptureDevice),
-              captureSession.canAddInput(videoInput)
-        else { return }
+        // Session configuration must be on ONE serial queue
+        sessionQueue.async {
+            self.session.beginConfiguration()
 
-        captureSession.addInput(videoInput)
+            guard let device = AVCaptureDevice.default(for: .video),
+                  let input = try? AVCaptureDeviceInput(device: device),
+                  self.session.canAddInput(input) else {
+                self.session.commitConfiguration()
+                return
+            }
 
-        let metadataOutput = AVCaptureMetadataOutput()
-        if captureSession.canAddOutput(metadataOutput) {
-            captureSession.addOutput(metadataOutput)
+            let output = AVCaptureMetadataOutput()
+            guard self.session.canAddOutput(output) else {
+                self.session.commitConfiguration()
+                return
+            }
 
-            metadataOutput.setMetadataObjectsDelegate(self, queue: DispatchQueue.main)
-            metadataOutput.metadataObjectTypes = [.pdf417]
+            self.session.addInput(input)
+            self.session.addOutput(output)
+
+            output.setMetadataObjectsDelegate(self, queue: self.sessionQueue)
+            output.metadataObjectTypes = [.pdf417, .qr, .code128]
+
+            self.session.commitConfiguration()
         }
-
-        previewLayer = AVCaptureVideoPreviewLayer(session: captureSession)
-        previewLayer.frame = view.layer.bounds
-        previewLayer.videoGravity = .resizeAspectFill
-        view.layer.addSublayer(previewLayer)
-
-        captureSession.startRunning()
     }
 
-    func metadataOutput(_ output: AVCaptureMetadataOutput,
-                        didOutput metadataObjects: [AVMetadataObject],
-                        from connection: AVCaptureConnection) {
-        guard let object = metadataObjects.first as? AVMetadataMachineReadableCodeObject,
-              let stringValue = object.stringValue
-        else {
-            return
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+
+        sessionQueue.async {
+            if !self.session.isRunning {
+                self.session.startRunning()
+            }
+        }
+    }
+
+    func metadataOutput(
+        _ output: AVCaptureMetadataOutput,
+        didOutput metadataObjects: [AVMetadataObject],
+        from connection: AVCaptureConnection
+    ) {
+        guard let obj = metadataObjects.first as? AVMetadataMachineReadableCodeObject,
+              let value = obj.stringValue else { return }
+
+        sessionQueue.async {
+            self.session.stopRunning()
         }
 
-        captureSession.stopRunning()
-        onScan?(stringValue)
-
-        // Restart scanning after a delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            self.captureSession.startRunning()
+        DispatchQueue.main.async {
+            self.onScan?(value)
         }
     }
 }
+
+    
