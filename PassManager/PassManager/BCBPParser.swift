@@ -81,7 +81,11 @@ func parseBCBP(_ raw: String) -> BoardingPass? {
     // 1️⃣ Find PNR
     guard let anchor = findPNRAnchor(s) else { return nil }
 
-    let pnr = anchor.pnr
+    // Clean PNR (remove leading E if present)
+    let pnr = anchor.pnr.hasPrefix("E")
+        ? String(anchor.pnr.dropFirst())
+        : anchor.pnr
+
     let pnrIndex = anchor.index
 
     // 2️⃣ Passenger name (clean end)
